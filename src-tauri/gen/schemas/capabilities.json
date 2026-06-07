@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default permissions for the main window","local":true,"windows":["main"],"permissions":["core:default"]},"forwarded-view":{"identifier":"forwarded-view","description":"Permissions for the forwarded view webview window","local":true,"windows":["forwarded-view"],"permissions":["core:default"]}}
