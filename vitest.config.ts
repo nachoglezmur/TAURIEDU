@@ -18,6 +18,11 @@ export default mergeConfig(
           "src/test/**",
           "src/__tests__/**",
         ],
+        thresholds: {
+          lines: 80,
+          functions: 80,
+          branches: 70,
+        },
       },
     },
   })

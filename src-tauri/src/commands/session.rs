@@ -141,6 +141,7 @@ pub fn open_forwarded_view(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn session_status_serializes_to_lowercase() {
@@ -174,5 +175,52 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         assert!(is_port_open(port));
+    }
+
+    #[test]
+    #[serial]
+    fn get_session_status_returns_stopped_after_reset() {
+        stop_session_static();
+        assert_eq!(get_session_status(), SessionStatus::Stopped);
+    }
+
+    #[test]
+    #[serial]
+    fn get_session_status_reflects_running_when_set() {
+        stop_session_static();
+        *SESSION_STATUS.lock().unwrap() = SessionStatus::Running;
+        assert_eq!(get_session_status(), SessionStatus::Running);
+        stop_session_static();
+    }
+
+    #[test]
+    #[serial]
+    fn stop_session_static_resets_running_to_stopped() {
+        *SESSION_STATUS.lock().unwrap() = SessionStatus::Running;
+        stop_session_static();
+        assert_eq!(SESSION_STATUS.lock().unwrap().clone(), SessionStatus::Stopped);
+    }
+
+    #[test]
+    #[serial]
+    fn get_session_status_detects_exited_child_as_error() {
+        stop_session_static();
+        *SESSION_STATUS.lock().unwrap() = SessionStatus::Starting;
+
+        // Spawn a process that exits immediately
+        let child = std::process::Command::new("cmd")
+            .args(["/c", "exit", "0"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("failed to spawn cmd");
+
+        *SSM_CHILD.lock().unwrap() = Some(child);
+
+        // Wait until child has exited
+        std::thread::sleep(std::time::Duration::from_millis(200));
+
+        assert_eq!(get_session_status(), SessionStatus::Error);
+        stop_session_static();
     }
 }

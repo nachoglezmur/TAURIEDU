@@ -20,21 +20,8 @@ pub fn get_instances_file_path() -> String {
     instances_file_path().to_string_lossy().to_string()
 }
 
-#[tauri::command]
-pub fn load_instances() -> Result<Vec<Instance>, String> {
-    let path = instances_file_path();
-
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-
-    if !path.exists() {
-        fs::write(&path, "").map_err(|e| e.to_string())?;
-    }
-
-    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-
-    let instances: Vec<Instance> = content
+fn parse_instances_csv(content: &str) -> Vec<Instance> {
+    content
         .lines()
         .map(|l| l.trim())
         .filter(|l| !l.is_empty() && !l.starts_with('#') && l.contains("i-"))
@@ -49,30 +36,29 @@ pub fn load_instances() -> Result<Vec<Instance>, String> {
             Instance { id, name }
         })
         .filter(|i| i.id.starts_with("i-"))
-        .collect();
+        .collect()
+}
 
-    Ok(instances)
+#[tauri::command]
+pub fn load_instances() -> Result<Vec<Instance>, String> {
+    let path = instances_file_path();
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    if !path.exists() {
+        fs::write(&path, "").map_err(|e| e.to_string())?;
+    }
+
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+
+    Ok(parse_instances_csv(&content))
 }
 
 #[cfg(test)]
 mod tests {
-    fn parse(csv: &str) -> Vec<super::Instance> {
-        csv.lines()
-            .map(|l| l.trim())
-            .filter(|l| !l.is_empty() && !l.starts_with('#') && l.contains("i-"))
-            .map(|line| {
-                let mut parts = line.splitn(2, ',');
-                let id = parts.next().unwrap_or("").trim().to_string();
-                let name = parts
-                    .next()
-                    .map(|n| n.trim().to_string())
-                    .filter(|n| !n.is_empty())
-                    .unwrap_or_else(|| id.clone());
-                super::Instance { id, name }
-            })
-            .filter(|i| i.id.starts_with("i-"))
-            .collect()
-    }
+    use super::parse_instances_csv as parse;
 
     #[test]
     fn parses_id_and_name() {

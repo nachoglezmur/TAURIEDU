@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, waitFor, act, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -10,6 +10,10 @@ import SetupScreen from "../components/SetupScreen";
 describe("SetupScreen", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("renders heading and install button on idle", () => {
@@ -24,17 +28,17 @@ describe("SetupScreen", () => {
   });
 
   it("shows CLI installing message during cli step", async () => {
-    let resolvePlugin: (v: unknown) => void;
+    let resolveAwsCli: () => void;
     vi.mocked(invoke)
       .mockResolvedValueOnce({ aws_cli: false, ssm_plugin: false })
-      .mockResolvedValueOnce(undefined) // install_aws_cli
-      .mockReturnValueOnce(new Promise((r) => { resolvePlugin = r; })); // install_ssm_plugin hangs
+      .mockReturnValueOnce(new Promise<void>((r) => { resolveAwsCli = r; })) // install_aws_cli hangs
+      .mockResolvedValue(undefined); // install_ssm_plugin
 
     render(<SetupScreen onComplete={vi.fn()} />);
     await userEvent.click(screen.getByRole("button", { name: /Install Dependencies/i }));
 
     expect(await screen.findByText(/Installing AWS CLI/i)).toBeInTheDocument();
-    resolvePlugin!(undefined);
+    resolveAwsCli!();
   });
 
   it("shows plugin installing message during plugin step", async () => {
@@ -60,11 +64,8 @@ describe("SetupScreen", () => {
     expect(await screen.findByText(/Setup complete/i)).toBeInTheDocument();
   });
 
-  it("calls onComplete after done (setTimeout spied to call immediately)", async () => {
-    vi.spyOn(global, "setTimeout").mockImplementationOnce((fn) => {
-      if (typeof fn === "function") fn();
-      return 0 as ReturnType<typeof setTimeout>;
-    });
+  it("calls onComplete after done (fake timers advance past delay)", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearTimeout", "clearInterval"] });
 
     vi.mocked(invoke)
       .mockResolvedValueOnce({ aws_cli: false, ssm_plugin: false })
@@ -73,9 +74,14 @@ describe("SetupScreen", () => {
 
     const onComplete = vi.fn();
     render(<SetupScreen onComplete={onComplete} />);
-    await userEvent.click(screen.getByRole("button", { name: /Install Dependencies/i }));
 
-    await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /Install Dependencies/i }));
+    });
+
+    expect(screen.getByText(/Setup complete/i)).toBeInTheDocument();
+    act(() => { vi.advanceTimersByTime(1500); });
+    expect(onComplete).toHaveBeenCalledOnce();
   });
 
   it("skips install_aws_cli when aws_cli already present", async () => {
